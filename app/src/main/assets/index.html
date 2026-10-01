@@ -664,6 +664,10 @@ function sendAnnounce(){
 
 /* ===== پشتیبان ===== */
 function doBackup(){
+  if(window.AndroidBridge){
+    window.AndroidBridge.saveBackup('backup_building_'+data.year+'_'+Date.now()+'.json', JSON.stringify(data,null,2));
+    return;
+  }
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='backup_building_'+data.year+'_'+Date.now()+'.json'; a.click();
@@ -676,7 +680,7 @@ function doRestore(ev){
     try{
       const parsed=JSON.parse(e.target.result);
       if(!parsed.units) throw new Error('فرمت نامعتبر');
-      data=parsed; saveData(); fillMonthSelects(); renderHome(); toast('بازیابی موفق');
+      data=parsed; saveData(); fillMonthSelects(); renderHome(); loadSettingsUI(); toast('بازیابی موفق');
     }catch(err){toast('خطا در خواندن فایل');}
   };
   reader.readAsText(file); ev.target.value='';
