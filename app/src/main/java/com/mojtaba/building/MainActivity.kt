@@ -5,17 +5,70 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingBackupContent: String? = null
+
+    // انتخاب فایل برای بازیابی پشتیبان
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val uris = if (result.resultCode == RESULT_OK) {
+                WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+            } else null
+            filePathCallback?.onReceiveValue(uris)
+            filePathCallback = null
+        }
+
+    // ذخیره فایل پشتیبان (کاربر خودش محل ذخیره را انتخاب می‌کند)
+    private val createDocLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val uri = result.data?.data
+            val content = pendingBackupContent
+            if (result.resultCode == RESULT_OK && uri != null && content != null) {
+                try {
+                    contentResolver.openOutputStream(uri)?.use {
+                        it.write(content.toByteArray(Charsets.UTF_8))
+                    }
+                    Toast.makeText(this, "فایل پشتیبان ذخیره شد", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "خطا در ذخیره فایل", Toast.LENGTH_LONG).show()
+                }
+            }
+            pendingBackupContent = null
+        }
+
+    inner class AndroidBridge {
+        @JavascriptInterface
+        fun saveBackup(filename: String, content: String) {
+            runOnUiThread {
+                pendingBackupContent = content
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_TITLE, filename)
+                }
+                try {
+                    createDocLauncher.launch(intent)
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(this@MainActivity, "برنامه‌ای برای ذخیره فایل پیدا نشد", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,6 +92,8 @@ class MainActivity : AppCompatActivity() {
         settings.loadWithOverviewMode = true
         settings.textZoom = 100
 
+        webView.addJavascriptInterface(AndroidBridge(), "AndroidBridge")
+
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
@@ -48,7 +103,29 @@ class MainActivity : AppCompatActivity() {
                 return handleExternalLink(url)
             }
         }
-        webView.webChromeClient = WebChromeClient()
+
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                webView: WebView?,
+                callback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                filePathCallback?.onReceiveValue(null)
+                filePathCallback = callback
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }
+                return try {
+                    fileChooserLauncher.launch(Intent.createChooser(intent, "انتخاب فایل پشتیبان"))
+                    true
+                } catch (e: Exception) {
+                    filePathCallback?.onReceiveValue(null)
+                    filePathCallback = null
+                    false
+                }
+            }
+        }
 
         // Load the HTML from assets (offline)
         webView.loadUrl("file:///android_asset/index.html")
@@ -61,7 +138,6 @@ class MainActivity : AppCompatActivity() {
         ) {
             try {
                 if (url.startsWith("sms:") || url.startsWith("smsto:")) {
-                    // جدا کردن شماره و متن پیامک
                     val withoutScheme = url.substringAfter(":")
                     val number = withoutScheme.substringBefore("?")
                     val body = if (withoutScheme.contains("body="))
