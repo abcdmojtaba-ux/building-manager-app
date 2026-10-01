@@ -190,9 +190,9 @@ label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:4px}
 <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="doRestore(event)">
 <hr style="margin:20px 0;border:none;border-top:1px solid var(--border)">
 
-<label>موجودی اولیه / فعلی حساب (تومان)</label>
+<label>موجودی فعلی حساب (تومان)</label>
 <input type="number" id="settingBalance" value="0" onchange="saveSettings()">
-<p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">این عدد را برابر موجودی واقعی حساب بگذار. بعد از آن، واریزی ساکنین اضافه و هزینه‌ها کم می‌شود.</p>
+<p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">موجودی واقعی فعلی حساب را بنویس. همین عدد در صفحهٔ اصلی نمایش داده می‌شود و از این به بعد با هر واریزی اضافه و با هر هزینه کم می‌شود.</p>
 
 <label>سال مالی جاری</label>
 <input type="number" id="settingYear" value="1405" onchange="saveSettings()">
@@ -681,14 +681,24 @@ function doRestore(ev){
   };
   reader.readAsText(file); ev.target.value='';
 }
+let shownBalance=0;
 function loadSettingsUI(){
   document.getElementById('settingYear').value=data.year;
-  const sb=document.getElementById('settingBalance'); if(sb) sb.value=data.initialBalance||0;
+  shownBalance=getAccountBalance();
+  const sb=document.getElementById('settingBalance'); if(sb) sb.value=shownBalance;
   document.getElementById('settingSms').value=data.settings.smsTemplate||'';
 }
 function saveSettings(){
+  const sb=document.getElementById('settingBalance');
+  if(sb){
+    const entered=+sb.value||0;
+    if(entered!==shownBalance){
+      // کاربر موجودی فعلی را وارد کرده؛ موجودی اولیه طوری تنظیم می‌شود که موجودی نمایش‌داده‌شده دقیقاً همین عدد باشد
+      data.initialBalance = entered - getTotalReceived() + getTotalExpenses();
+      shownBalance=entered;
+    }
+  }
   data.year=+document.getElementById('settingYear').value||1405;
-  const sb=document.getElementById('settingBalance'); if(sb) data.initialBalance=+sb.value||0;
   data.settings.smsTemplate=document.getElementById('settingSms').value;
   saveData(); document.getElementById('headerYear').textContent='سال '+data.year+' — داده‌ها روی حافظه گوشی'; toast('تنظیمات ذخیره شد');
 }
